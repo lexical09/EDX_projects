@@ -1,0 +1,344 @@
+---
+title: "Investigate flight performance from 2008-2018"
+date: "March 11, 2019"
+output: 
+    pdf_document:
+      keep_tex: true
+    html_document:
+      toc: true
+---
+## **INTRODUCTION** ##
+
+In this project, we will study the flight performance of all U.S. domestic carriers and build a linear regression to predict number of delays. The dataset for this study contains information of all U.S. carriers regarding flight delays and performace. This dataset was obtained from the  [Bureau of Transportation Statistics](https://www.transtats.bts.gov/OT_Delay/OT_DelayCause1.asp?pn=1), which includes data collected from December 2008 to December 2018. An data exploratory study will be focused on the top ten carriers with the largest number of on-time flights and top ten airlines with the largest number of delayed flights caused by different reasons. Finally, we will predict number of delays using linear regression model. 
+
+## **DATA EXPLORATORY SECTION** ##
+
+```{r}
+#Import dataset as a dataframe
+flight <- read.csv("airline_delay_causes.csv", header=T, check.names=F)
+```
+
+### **Data Structure** ###
+The dataset includes 26 different airline carriers with 21 different variables with 155,317 observations for each variable.
+```{r}
+#Get a summary of datatype and data info using summary and str
+str(flight)
+summary(flight)
+
+```
+```{r}
+#Inspect the structure of the data using head(data)
+head(flight)
+```
+
+
+```{r}
+#Remove Column with NA values
+flight <- flight[,colSums(is.na(flight))<nrow(flight)]
+```
+
+```{r}
+#Check how many carriers in this dataset
+print(paste("There are", length(unique(flight$carrier_name)), "carriers in this dataset."))
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+###Load necessary packages for data exploration and analysis###
+require(ggplot2)
+require(grid)
+require(scales)
+require(dplyr)
+require(gridExtra)
+library(RColorBrewer)
+library(ggthemes)
+library(ggrepel)
+library(rmarkdown)
+library(knitr)
+```
+
+### **Generate New Summary Dataset** ###
+
+The chunk below will produce a new summary dataframe, which includes the information regarding the total number of arrivals, delayed flights, cancelled flights, and on-time flights that each carrier has by year. 
+
+```{r}
+flight_summary <- flight %>%
+  group_by(year, carrier_name) %>%
+  summarize(arrivals = sum(arr_flights), 
+             delayed = sum(arr_del15), 
+             cancelled = sum(arr_cancelled), 
+             diverted = sum(arr_diverted)) %>%
+  transform(on_time = 1 - delayed/arrivals) %>%
+  transform(delayed_percent = delayed/arrivals)
+```
+
+Then, we can remove all rows with NA values since they do not have any information for evaluation. 
+
+```{r}
+#Remove all row with NA values from the flight_summary dataframe
+flight_summary <- na.omit(flight_summary)
+
+head(flight_summary)
+```
+
+### **Line Plot by Year for Each Carrier** ###
+
+```{r fig.height = 10, fig.width = 12}
+ggplot(data = flight_summary, aes(x=year, y=on_time))+
+   scale_x_continuous(name = "Year", 
+                      breaks = seq(2008, 2018, 1))+
+   geom_line(aes(color=carrier_name))
+```
+
+The above line plot looks very busy and hard to follow, so we will only focus on primarily two sets of top ten airlines:
++ Top 10 airlines that have the average largest number of delayed flights in the past 10 years
++ Top 10 airlines that have the average largest number of on-time flights in the past 10 years
+
+Beyond that, we will also focus on evaluating the performance of the top ten airlines with the largest number of delayed flights in the past 10 years (2008-2018). we will make a new summary table which includes the average number of arrivals, cancelled flights, diverted flights, delayed flights for each carrier in the last 10 years. 
+
+```{r}
+#Make new dataset that includes the average number of arrivals
+#delayed flights, cancelled flights, and diverted flights and the proportion of 
+#on_time flights in the last 10 years by carrier
+
+flight_summary_average <- flight_summary %>%
+   group_by(carrier_name) %>%
+   summarize(ave_arrivals = mean(arrivals), 
+             ave_delayed = mean(delayed_percent), 
+             ave_cancelled = mean(cancelled),
+             ave_diverted = mean(diverted), 
+             ave_ontime = mean(on_time)) 
+```
+
+### **Bar Plots for Top  Airlines** ###
+
+``` {r}
+top_ten_delayed <- flight_summary_average%>%
+   arrange(desc(ave_delayed))%>%
+   top_n(10, ave_delayed)
+
+top_ten_ontime <- flight_summary_average%>%
+   arrange((desc(ave_ontime)))%>%
+   top_n(10, ave_ontime)
+```
+
+```{r}
+#Average proportion of delayed flights from Dec 2008 to Dec 2018
+ggplot(data = top_ten_delayed, aes(x=reorder(carrier_name,ave_delayed), ave_delayed))+
+  geom_bar(stat = 'identity', position = 'dodge', fill="#FF9999", colour="black")+
+  geom_text(mapping = aes(label = ave_ontime), size = 3) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=.4,size=10))+
+  labs(x="Airline Name", y='Average proportion of delayed flights')+
+  ggtitle("Average proportion of delayed flights (Dec 2008 - Dec 2018)") + coord_flip()
+```
+
+```{r}
+#Average proportion of on-time flights from Dec 2008 to Dec 2018
+ggplot(data = top_ten_ontime, aes(x=reorder(carrier_name, ave_ontime), y=ave_ontime))+
+   geom_bar(stat = 'identity', position = 'dodge', fill="#56B4E9", colour="black")+
+   geom_text(mapping = aes(label = ave_ontime), size = 3) +
+   labs(x='Airline Name', y='Average proportion of on-time flights')+
+   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.4))+
+   ggtitle('Average proportion of on-time flights (Dec 2008 - Dec 2018)')+ coord_flip()
+```
+Comair Inc. airlines has the highest average number of delayed flights from 2008-2018. Hawaian Airlines has high on-time proportion of 90.7%.
+
+### **Finding The Most Common Delay Cause** ###
+
+```{r fig.height = 10, fig.width = 12}
+#Subseting all data point related to airlines belonging to the top_ten_delay list
+subset_delay <- filter(flight, 
+                        carrier_name %in%
+                           top_ten_delayed[['carrier_name']])
+
+#Create new summary for each delay cause for each carrier
+delay_summary <- subset_delay %>%
+  group_by(carrier_name, year) %>%
+  summarize(arr_delay = sum(`arr_delay`), 
+            carrier_delay = sum(`carrier_delay`), 
+            weather_delay = sum(weather_delay), 
+            nas_delay = sum(nas_delay), 
+            security_delay = sum(security_delay), 
+            late_aircraft_delay = sum(late_aircraft_delay),
+            sum_delay = sum(`arr_delay`,`carrier_delay`,weather_delay,
+                           nas_delay,security_delay,late_aircraft_delay))%>%
+  transform(arr_delay_per = arr_delay/sum_delay,
+            carrier_delay_per = carrier_delay/sum_delay,
+            weather_delay_per = weather_delay/sum_delay,
+            nas_delay_per = nas_delay/sum_delay,
+            security_delay_per = security_delay/sum_delay,
+            late_aircraft_delay_per = late_aircraft_delay/sum_delay)
+
+#Remove NA rows from delay_summary dataset
+delay_summary <- na.omit(delay_summary)
+
+#Calcuate the average number of delayed flight by each category from 2005-2017
+average_delay_summary <- delay_summary %>%
+  group_by(carrier_name)%>%
+  summarize(arrival_delay = mean(arr_delay_per), 
+            carrier_delay = mean(carrier_delay_per), 
+            weather_delay = mean(weather_delay_per), 
+            nas_delay = mean(nas_delay_per), 
+            security_delay = mean(security_delay_per), 
+            late_aircraft_delay = mean(late_aircraft_delay_per))
+
+#Create grouped bar plots
+library(reshape2)
+
+average_delay_summary <- data.frame(average_delay_summary)
+average_delay_summary <- melt(average_delay_summary, 
+                              id.vars = "carrier_name")
+
+ggplot(data = average_delay_summary,
+       aes(x=carrier_name, y=value, fill=variable,width=.5))+
+  geom_bar(stat = 'identity',
+           colour="black",
+           width = 2,
+           position = 'dodge',
+           aes(color = variable))+
+  theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.4, size=12))+
+  ggtitle("Comparison Between Different Delay Among Airlines")+
+  labs(x="Proportion",y="Airline Name") + coord_flip()
+  
+```
+
+It appears that arrival delay and late aircraft delay are the two most common cause among these top ten delayed airlines. Weather does not have a severe impact on delay for all airlines. 
+
+### **Evaluating The Performance of all Arlines in `the top_ten_delay` List** ###
+
+To further evaluate the performance of all airlines in the `top_ten_delayed` list, I have subset all their info from the `flight_summary dataset` before generating any plots for the analysis. 
+
+```{r, warning=FALSE}
+#Subseting info for the top ten airlines with the highest average number of 
+#delayed flights 
+filter(flight_summary,carrier_name %in% top_ten_delayed[['carrier_name']]) %>% 
+  head(5) %>% knitr::kable()
+
+```
+```{r fig.height = 10, fig.width = 12}
+p1 <- filter(flight_summary,carrier_name %in% top_ten_delayed[['carrier_name']]) %>%
+  mutate(label = if_else(year == max(year), as.character(carrier_name), NA_character_)) %>%
+  ggplot(aes(x=year, y=arrivals, color=carrier_name))+
+  scale_x_continuous(name = "Year", 
+                      breaks = seq(2008, 2018, 1))+
+  geom_line()+
+  geom_label_repel(aes(label = label), nudge_x = 0.5, na.rm = TRUE)
+
+p2 <- filter(flight_summary,carrier_name %in% top_ten_delayed[['carrier_name']]) %>%
+  mutate(label = if_else(year == max(year), as.character(carrier_name), NA_character_)) %>%
+  ggplot(aes(x=year, y=delayed, color=carrier_name))+
+  scale_x_continuous(name = "Year", 
+                      breaks = seq(2008, 2018, 1))+
+  geom_line()+
+  geom_label_repel(aes(label = label), nudge_x = 0.5, na.rm = TRUE)
+
+p3 <- filter(flight_summary,carrier_name %in% top_ten_delayed[['carrier_name']]) %>%
+  mutate(label = if_else(year == max(year), as.character(carrier_name), NA_character_)) %>%
+  ggplot(aes(x=year, y=on_time, color=carrier_name))+
+  scale_x_continuous(name = "Year", 
+                      breaks = seq(2008, 2018, 1))+
+  geom_line()+
+  geom_label_repel(aes(label = label), nudge_x = 0.5, na.rm = TRUE)
+
+grid.arrange(p1, p2, p3)
+```
+
+We don't have a lot of information regarding these airlines and thus final conclusion cannot be draw from here. However, this missing-data fact could potentially explain their performance since it could mean that these airlines are still at their early stage of development. It's also noticeable that Mesa Airlines has increasing number of delays relative to increasing number of on-time flights. It's in opposite with JetBlue Airways and Frontier Airlines, which have rapidly decresing number of on-time flights in recent year with increasing number of flights. 
+
+
+```{r}
+##Create new CSV
+write.csv(top_ten_delayed, file="top_ten_delay.csv", row.names = FALSE)
+write.csv(top_ten_ontime, file="top_ten_on_time.csv", row.names = FALSE)
+write.csv(average_delay_summary, file="most_common_delay_cause.csv", row.names = FALSE)
+```
+
+
+## **BUILD LINEAR REGRESSION MODEL** ##
+
+We randomly split it into a training set (70% of the data) and testing set (30% of the data). Since our dependent variable is a continuous one, we cannot use the sample.split function.
+```{r}
+#Copy the data
+Airlines <- flight
+
+# Train set (%70) and test set (30%)
+set.seed(15071)
+spl <- sample(nrow(Airlines), 0.7*nrow(Airlines))
+AirlinesTrain <- Airlines[spl, ]
+temp <- Airlines[-spl, ]
+
+#Ensure trainset contains carrier_name and airport from testset
+#with no NA values
+temp <- temp%>%
+  semi_join(AirlinesTrain, by = "carrier_name")%>% 
+  semi_join(AirlinesTrain, by = "airport")%>% 
+  na.omit(cols = c("arr_del15"))
+
+AirlinesTest <- temp
+rm(temp)
+```
+
+### **Linear regression** ###
+Build a linear regression model to predict `arr_del15` variable (total number of delays) using all of the other variables as independent variables. 
+```{r}
+#train model using all of the other variables as independent variables
+delayLR <- lm(arr_del15 ~., data = AirlinesTrain)
+```
+### **The Residual Mean Squared Error (RMSE)**<br>
+The RMSE is then defined as below, with N being the number of samples and the sum occurring over all these combinations. This number in our case should be less than 1.
+$$RMSE = \sqrt{\frac{1}{N}\sum_{u,i}^{}(\hat{y}_{u,i} - y_{u,i})^2}$$
+```{r}
+#The root mean squared error
+RMSE <- function(true_values, predicted_values){
+            sqrt(mean((true_values - predicted_values)^2))}
+```
+
+### **The R-squared and Adjuested R-squared**<br>
+R-squared is the proportional improvement in prediction from the regression model, compared to the mean model. It indicates the goodness of fit of the model. R-squared takes values from zero to one, with zero indicating that the proposed model does not improve prediction over the mean model, and one indicating perfect prediction. Improvement in the regression model results in proportional increases in R-squared.
+
+Adjusted R-squared incorporates the model’s degrees of freedom. It will increase as predictors are added if the increase in model fit is worthwhile. It is interpreted as the proportion of total variance that is explained by the model.
+
+### **Prediction on Test Set** ###
+Using the function `predict` to predict the total number of delays. Then, we can calculate the R-squared (which is better when higher) values that tell us how reliable our model is. 
+```{r , warning=FALSE, message=FALSE}
+#Predict number of delays on Test set
+delayLRpred <- predict.lm(delayLR, newdata = AirlinesTest)
+```
+```{r , warning=FALSE, message=FALSE}
+#Get R-squared
+Rsquared <-summary(delayLR)$r.squared
+
+#Get Adjusted R-squared
+AdjRsquared <-summary(delayLR)$adj.r.squared
+
+# Results for RMSE, R-squared, Adj R-squared
+rmse <- RMSE(AirlinesTest$arr_del15, delayLRpred)
+results <- tibble(statistics = "RMSE", results = rmse)
+results <- bind_rows(results, tibble(statistics="R-squared",
+                                    results = Rsquared ))
+results <- bind_rows(results, tibble(statistics="Adjusted R-squared",
+                                     results = AdjRsquared ))
+
+results %>% knitr::kable()
+```
+
+We have R-squared and Adjusted R-squared of 1 and RMSE of 0.0050841, which means that this linear regression has high accuracy. Below, we can compare predicted number of delays for each airline in each year with the known number of delays. Even though this practice must be avoided for any bias, but the purpose of this comparison is for us to have a picture of how the prediction work.
+```{r}
+#combine Test set and predicted number of delays
+output <- cbind(AirlinesTest, delayLRpred)
+
+#Save file 
+write.csv(output,"Flights_with_predicted_delays.csv", na = "", row.names=FALSE)
+
+#Show top 15 preditec scores
+output %>% select(c(year ,carrier_name,airport,arr_del15,delayLRpred)) %>% 
+  head(15) %>% knitr::kable()
+```
+
+## **CONCLUSION** ##
+Through this data analysis, the following points can be made for the flight performance of year period from Dec 2008 to Dec 2018: 
+
++ The top five airlines with the largest proportion of on-time flights are: Hawaian Airlines, Endeavor Air, Alaska Airlines, Virgin America, Republic Airline. 
++ The top five airlines with the largest proportion of delayed flights are: Comair , Northwest Airlines, Atlantic Southeast Airlines, SkyWest Airlines, Pinnacle Airlines. 
+
+We were able to predict the number of delays with high accuracy (RMSE=0.0050841, R-squared=Adj. R-squared==1) with linear regression model using all of the other variables as independent variables. In this case, we was able to use all variable because our dataset is not large. In the cause that our dataset is extremely large, we will have to conduct a more thorough study. 

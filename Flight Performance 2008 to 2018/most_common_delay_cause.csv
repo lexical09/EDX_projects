@@ -1,0 +1,61 @@
+"carrier_name","variable","value"
+"Atlantic Southeast Airlines","arrival_delay",0.5
+"Comair Inc.","arrival_delay",0.5
+"Continental Air Lines Inc.","arrival_delay",0.5
+"Envoy Air","arrival_delay",0.5
+"Frontier Airlines Inc.","arrival_delay",0.500005574562707
+"JetBlue Airways","arrival_delay",0.5
+"Mesa Airlines Inc.","arrival_delay",0.5
+"Northwest Airlines Inc.","arrival_delay",0.5
+"Pinnacle Airlines Inc.","arrival_delay",0.5
+"SkyWest Airlines Inc.","arrival_delay",0.5
+"Atlantic Southeast Airlines","carrier_delay",0.146736458612717
+"Comair Inc.","carrier_delay",0.194677745535133
+"Continental Air Lines Inc.","carrier_delay",0.129255957156179
+"Envoy Air","carrier_delay",0.132399845982895
+"Frontier Airlines Inc.","carrier_delay",0.122949901746985
+"JetBlue Airways","carrier_delay",0.151121044844419
+"Mesa Airlines Inc.","carrier_delay",0.181398003907658
+"Northwest Airlines Inc.","carrier_delay",0.138584021925877
+"Pinnacle Airlines Inc.","carrier_delay",0.148999467450881
+"SkyWest Airlines Inc.","carrier_delay",0.0886637960000207
+"Atlantic Southeast Airlines","weather_delay",0.0261080555597355
+"Comair Inc.","weather_delay",0.119695755447094
+"Continental Air Lines Inc.","weather_delay",0.0318346366113287
+"Envoy Air","weather_delay",0.0446711544201927
+"Frontier Airlines Inc.","weather_delay",0.00937440210386196
+"JetBlue Airways","weather_delay",0.0141062379601223
+"Mesa Airlines Inc.","weather_delay",0.0358609496420932
+"Northwest Airlines Inc.","weather_delay",0.0485692955902806
+"Pinnacle Airlines Inc.","weather_delay",0.0331276185628714
+"SkyWest Airlines Inc.","weather_delay",0.0207220433081245
+"Atlantic Southeast Airlines","nas_delay",0.10367971970975
+"Comair Inc.","nas_delay",0.161438246977373
+"Continental Air Lines Inc.","nas_delay",0.2117044446171
+"Envoy Air","nas_delay",0.134469588055977
+"Frontier Airlines Inc.","nas_delay",0.158599432594607
+"JetBlue Airways","nas_delay",0.130657983596783
+"Mesa Airlines Inc.","nas_delay",0.0951768378328234
+"Northwest Airlines Inc.","nas_delay",0.183674220731408
+"Pinnacle Airlines Inc.","nas_delay",0.140127576147455
+"SkyWest Airlines Inc.","nas_delay",0.127612677112034
+"Atlantic Southeast Airlines","security_delay",0.000320713548646782
+"Comair Inc.","security_delay",0.000313907702456002
+"Continental Air Lines Inc.","security_delay",0.00251989805816892
+"Envoy Air","security_delay",0.000782880638194106
+"Frontier Airlines Inc.","security_delay",0
+"JetBlue Airways","security_delay",0.00121750237954734
+"Mesa Airlines Inc.","security_delay",0.000983503110991992
+"Northwest Airlines Inc.","security_delay",0.000295549374130737
+"Pinnacle Airlines Inc.","security_delay",0.000488955496802349
+"SkyWest Airlines Inc.","security_delay",0.000354611762151656
+"Atlantic Southeast Airlines","late_aircraft_delay",0.223155052569151
+"Comair Inc.","late_aircraft_delay",0.0238743443379441
+"Continental Air Lines Inc.","late_aircraft_delay",0.124685063557224
+"Envoy Air","late_aircraft_delay",0.187676530902741
+"Frontier Airlines Inc.","late_aircraft_delay",0.209070688991839
+"JetBlue Airways","late_aircraft_delay",0.202897231219128
+"Mesa Airlines Inc.","late_aircraft_delay",0.186580705506434
+"Northwest Airlines Inc.","late_aircraft_delay",0.128876912378303
+"Pinnacle Airlines Inc.","late_aircraft_delay",0.177256382341991
+"SkyWest Airlines Inc.","late_aircraft_delay",0.26264687181767
