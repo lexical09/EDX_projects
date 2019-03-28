@@ -1,0 +1,359 @@
+---
+title: "MovieLens Project: Rating Scores Prediction"
+date: "March 11, 2019"
+output:
+    pdf_document:
+      keep_tex: true
+    html_document:
+      toc: true
+---
+## **A. INTRODUCTION** ##
+The goal of this project is to predict the rating given a user and a movie, using linear regression that included user and movie features on the MovieLens 10M data set. A brief data analysis was conducted to see the data distribution and factors that might influnced how the users rate movie. Then, we compared the RMSEs (Root Mean Square Error) of linear regression model that only included movie effects and linear regression model that only included both user and movie effects. 
+After going through this case study, you'll be able to:
+
+* Analyze data to develop your own version of a recommendation engine, which forms the basis of content systems used at companies like Netflix, Pandora, Spotify, etcetera
+* Experience a hands-on approach to advance your data science skills
+* Access to a series of resources and tools, including sample data basis, that will enable you to build your recommendation system
+
+### **A.1. About the Data**<br>
+We will use the [10M dataset](https://grouplens.org/datasets/movielens/10m/) provided by [MovieLens](https://grouplens.org/datasets/movielens/). This dataset set consists of:
+
+* 10000054 ratings and 95580 tags applied to 10681 movies by 71567 users. We are not using the tag file for the simplicity of this project.
+* Users were selected at random and had rated at least 20 movies.
+
+### **A.2. Getting Data**<br>
+Using the code below, which is provided in the [Data Science: Capstone](https://www.edx.org/course/data-science-capstone) course by Professor Rafael Irizarry, we can download and join the movies and rating files from the 10M dataset. Then, the data will be slpitted into two datasets: edx (contains 90% of data) and validation (contains 10% of data). We will use edx dataset as our known dataset and ignore validation dataset as if it is unknown for our future rating score prediction. 
+
+```{r,message=FALSE,warning=FALSE}
+##########################################################
+# Create edx set, validation set, and submission file
+##########################################################
+# Note: this process could take a couple of minutes
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+dl <- tempfile()
+download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings <- read.table(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                      col.names = c("userId", "movieId", "rating", "timestamp"))
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+
+movielens_10M <- left_join(ratings, movies, by = "movieId")
+
+# Validation set will be 10% of MovieLens data
+set.seed(1)
+test_index <- createDataPartition(y = movielens_10M$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens_10M[-test_index,]
+temp <- movielens_10M[test_index,]
+
+# Make sure userId and movieId in validation set are also in edx set
+validation <- temp %>% 
+     semi_join(edx, by = "movieId") %>%
+     semi_join(edx, by = "userId")
+
+# Add rows removed from validation set back into edx set
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+
+# Learners will develop their algorithms on the edx set
+# For grading, learners will run algorithm on validation set to generate ratings
+validation <- validation %>% select(-rating)
+
+# Ratings will go into the CSV submission file below:
+#write.csv(validation %>% select(userId, movieId) %>% 
+#mutate(rating = NA),"submission.csv", na = "", row.names=FALSE)
+
+#Remove data
+rm(dl, ratings, movies, test_index, temp, removed, movielens_10M)
+```
+
+## **B. DATA ANALYSIS** ##
+In this section I will analyze edx dataset to understand the dataset better and to figure the effects that influenced the rating scores for the movie.We need ignore the validation dataset completely as if it is unknown. Hence, we will only explore the edx dataset to get a better understand of our known data.
+
+### **B.1. Load packages**<br>
+Import packages that we will need later
+```{r, message=FALSE,warning=FALSE}
+#training classification and regression models
+library(caret)
+
+#toolkits for iteration
+library(purrr)
+
+#data manipulation
+library(tidyverse)
+
+#data visualization
+library(ggplot2)
+
+#date-times
+library(lubridate)
+
+#data wrangling
+library(dplyr)
+
+#convert rmarkdown to other formats
+library(rmarkdown)
+#dynamic report generation
+library(knitr)
+```
+
+### **B.2. Data Summary**<br>
+As shown below, the edx dataset has 9000055 observations and 6 variables (userId, movieId, rating, timestamp, title and genres). The averge rating score and median score are 3.512 and 4.0 respectively. 
+```{r,warning=FALSE}
+#Get data info for edx set
+str(edx)
+
+#Summary of edx set
+summary(edx)
+```
+### **B.3. Data Exploratory**<br>
+#### **B.3.a. Number of Unique Movies and Users**<br>
+There are 10677 unique movies and 69878 different users in this dataset.
+```{r,warning=FALSE}
+#Number of different users and movies
+edx %>% summarize(n_movies = n_distinct(movieId),n_users = n_distinct(userId))
+```
+
+
+#### **B.3.b. User Distribution**<br>
+Some users are more active than others at rating movies. The users with most number of ratings and their average scores and median scores are shown below. 
+```{r}
+# User distribution
+edx%>% 
+  count(userId) %>% 
+  ggplot(aes(n)) + 
+  geom_histogram(bins = 30, color = "black") + 
+  scale_x_log10() + 
+  ggtitle("User Distribution") +
+  xlab("userId")
+```
+
+
+```{r}
+#Popular users with highest number of rating with their average and median scores
+edx %>%
+  select(userId,rating) %>%
+  group_by(userId) %>%
+  summarise(count = n(), 
+            avg_score = mean(rating,na.rm = TRUE), 
+            median_score = median(rating,na.rm = TRUE)
+            ) %>%
+  ungroup() %>%
+  arrange(desc(count))
+```
+
+
+#### **B.3.c. Movies Distribution**<br>
+We can see that some movies get rated more than others. The most popular movie is Pulp Fiction (1994) with 31,362 ratings and an average rating score of 4.154789. 
+```{r}
+# Movies distribution
+edx%>% 
+  count(movieId) %>% 
+  ggplot(aes(n)) + 
+  geom_histogram(bins = 30, color = "black") + 
+  scale_x_log10() + 
+  labs(title="Movies Distribution",x ="movieId")
+```
+
+
+**Most Popular Movies**
+```{r}
+# Most popular movies
+edx %>%
+  mutate(year=year(as.Date(as_datetime(timestamp), format = "%m/%d/%Y")),
+         month=month(as.Date(as_datetime(timestamp), format = "%m/%d/%Y"))) %>%
+  select(title,rating,year,month) %>%
+  group_by(title) %>%
+  summarise(count = n(), #total number of ratings
+            avg_score = mean(rating,na.rm = TRUE) #average rating score
+            ) %>%
+  ungroup() %>%
+  arrange(desc(count))
+```
+
+
+**Most Popular Genres**<br>
+Drama is the most popular genre with 3,910,127 ratings and an average rating score of 3.673131. Followed by Comedy, Action and Adventure.
+```{r}
+#Number of ratings for each genres
+edx %>%
+  separate_rows(genres, sep = "\\|") %>%
+  select(genres, rating) %>%
+  group_by(genres) %>%
+  summarise(count = n(),
+            avg_score = mean(rating,na.rm = TRUE), 
+            median_score = median(rating,na.rm = TRUE)
+            ) %>%
+  ungroup() %>%
+  arrange(desc(count))
+```
+#### **B.3.d. Time Distribution**
+**Year with Largest Number of Ratings**<br>
+The year of 2000 has the highest number of ratings of 1,144,349. We can see that some years have larger number of reviews than others. 
+```{r}
+#Number of ratings in each year        
+edx %>% mutate(year=year(as.Date(as_datetime(timestamp), format = "%m/%d/%Y"))) %>%
+  ggplot(aes(x=year)) + 
+  geom_bar() +
+  geom_text(stat='count', aes(label=..count..), vjust= -0.5,size=2) +
+  scale_x_continuous(breaks=seq(1995, 2009, 1)) +
+  labs(title="Yearly Rating")
+```
+
+**Month with Largest Number of Ratings**<br>
+There is also an uneven distibution of reviews over the months. November has the largest number of reviews at 975,513. 
+```{r}
+edx %>% mutate(month=month(as.Date(as_datetime(timestamp), format = "%m/%d/%Y"))) %>%
+  ggplot(aes(x=month)) + 
+  geom_bar() +
+  geom_text(stat='count', aes(label=..count..), vjust= -0.5,size=2) +
+  scale_x_continuous(breaks=seq(0, 12, 1)) +
+  labs(title="Monthly Ratings")
+```
+**Week with Largest Number of Ratings**
+
+The average rating for each week is shown below:
+```{r}
+edx %>% mutate(date = round_date(as.Date(as_datetime(timestamp), 
+                                         format = "%m/%d/%Y"), unit = "week")) %>%
+	group_by(date) %>%
+	summarize(rating = mean(rating)) %>%
+	ggplot(aes(date, rating)) +
+	geom_point() +
+	geom_smooth()
+```
+
+
+## **C. PREDICTION MODELS**<br>
+### **C.1. Train and Test Sets for EDX Dataset**
+We will split the edx dataset into train and test sets. Test set will have 10% of data from edx dataset. 
+```{r}
+# Split edx data into train and test sets
+set.seed(1)
+test_index_edx <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+train_set <- edx[-test_index_edx,] #train set will be 90% of edx dataset
+test_set <- edx[test_index_edx,] #test set will be 10% of edx dataset
+#Remove unused data
+rm(test_index_edx)
+```
+
+
+To make sure we do not include users and movies in the test set that do not appear in the training set, we remove these entries using the semi_join function.
+```{r}
+test_set <- test_set %>% 
+  semi_join(train_set, by = "movieId") %>%
+  semi_join(train_set, by = "userId")
+```
+### **C.2. The Residual Mean Squared Error (RMSE)**<br>
+The RMSE is then defined as below, with N being the number of user/movie combinations and the sum occurring over all these combinations. This number in our case should be less than 1 (star).
+$$RMSE = \sqrt{\frac{1}{N}\sum_{u,i}^{}(\hat{y}_{u,i} - y_{u,i})^2}$$
+```{r}
+RMSE <- function(true_ratings, predicted_ratings){
+    sqrt(mean((true_ratings - predicted_ratings)^2)) }
+```
+
+### **C.3. Modeling Movie Effects**<br>
+In Professor Rafalab's lectures and textbook, multiple effects was tested. Below, I would like to test the movie effects and user effects on predicting the rating scores. The equation below accounted for the movie effects or bias ($b_{i}$ represents average ranking for movie $i$), where $\mu$ is the "true" rating for all movies, $\epsilon_{u,i}$ is independent errors sampled from the same distribution centered at 0. 
+$$Y_{i,j} = \mu +b_{i} + \epsilon_{u,i}$$ 
+We can use least squared to estimate the $b_{i}$ in the following way:
+
+```
+movieMod <- lm(rating ~  as.factor(movieId), data=train_set)
+```
+However, ecause there are thousands of $b_{i}$, each movie gets one, the `lm()` function will be very large and slow. Therefore, we are not using this function. However, the least square estimate $\hat{b}_{i}$ is just the average of $Y_{u,i}-\hat{\mu}$ for each movie $i$. So we can compute them this way (we will drop the hat notation in the code to represent estimates going forward):
+```{r}
+mu <- mean(train_set$rating) #Average rating
+
+movie_avgs <- train_set %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = mean(rating - mean(train_set$rating) ))
+
+predicted_ratings <- mu + test_set %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  pull(b_i)
+```
+
+```{r}
+# Calculate RMSE
+model_1_rmse <- RMSE(test_set$rating, predicted_ratings)
+rmse_results <- tibble(method = "Movie Effect Model", RMSE = model_1_rmse)
+rmse_results %>% knitr::kable()
+```
+
+### **C.4. Modeling User effects**<br>
+As we saw from the data analysis, some users rate most movie highly while others rate most movies very low. Hence, we can add another effect or bias $b_{u}$ (user-specific effect) to out model:
+$$Y_{i,j} = \mu +b_{i} +b_{u} +\epsilon_{u,i}$$ 
+To fit this model, we could again use `lm` like below:
+
+```
+movie_userMod <- lm(rating ~  as.factor(movieId) +  as.factor(userId), data=train_set)
+```
+However, for the reasons described earlier, we won't. Instead, we will compute an approximation but computing $\hat{\mu}$ and $\hat{b}_{i}$ and estimating $\hat{b}_{u}$ as the avergage of $y_{u,i}-\hat{\mu}-\hat{b}_{i}$ as below:
+
+```{r}
+user_avgs <- train_set  %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  group_by(userId) %>%
+  summarize(b_u = mean(rating - mu - b_i))
+```
+We can construct predictors and see how the RMSE workout:
+
+```{r}
+predicted_ratings <- test_set %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  left_join(user_avgs, by='userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  pull(pred)
+```
+
+```{r}
+# Calculate RMSE
+model_2_rmse <- RMSE(predicted_ratings,test_set$rating)
+rmse_results <- bind_rows(rmse_results,
+                          tibble(method="Movie + User Effects Model",  
+                                     RMSE = model_2_rmse ))
+```
+## **RESULTS: Movie User Effects Model for Prediction**<br>
+The model that includes both movie and user effects has been improved with a lower RMSE (of 0.8646844) than the model that only included movie effect (with RMSE of 0.9429615).
+```{r}
+rmse_results %>% knitr::kable()
+```
+
+
+## **CONCLUSION and RATING SCORES PREDICTION**<br>
+Through the data analysis, the following points can be made for the 10M MovieLens dataset:
++ Top five most popular movie titles are: Pulp Fiction (1994), Forrest Gump (1994), Silence of the Lambs, The (1991), Jurassic Park (1993) and Shawshank Redemption, The (1994).
++ Top five most popular genres are: Drama, Comedy, Action, Thriller and Adventure.
+
+According to the RMSEs resulted from previous tests, we should account both movie and user effect (with RMSE of 0.8646844) in our prediction. Therefore, I am going to apply use the User and Movie Effects Model for predicting the rating score for our testing set from validation dataset as below. Then, we save the file as submission.csv file.
+```{r}
+#Predict the rating scores
+predicted_rating <- validation %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  left_join(user_avgs, by='userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  pull(pred)
+
+output <- cbind(validation, predicted_rating) #combine validation and predicted_rating
+#Save the output as submission.csv without timestamp. title and genres columns
+write.csv(output %>% select(-c(timestamp,title,genres)),"submission.csv", na = "", row.names=FALSE)
+
+#Show top 15 preditec scores
+output %>% select(userId,movieId,predicted_rating)%>%head(15)%>% knitr::kable()
+```
+
+
+
+
+
+
+
